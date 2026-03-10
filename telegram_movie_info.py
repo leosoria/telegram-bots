@@ -256,8 +256,8 @@ def get_movie(query):
 
     text = (
         f"{tmdb_title} ({release_year})\n"
-        f"{pg} | {runtime_str} | {genre_str} [{imdb_rating}]\n"
-        f"Synopsis: {plot_es}\n"
+        f"{pg} | {runtime_str} | {genre_str} **[{imdb_rating}]**\n"
+        f"> **Synopsis:** {plot_es}\n"
         f"Cast: {cast_str}"
     )
 
@@ -302,13 +302,21 @@ async def handle(event, with_poster=False):
     new_text = data["text"]
 
     if links:
-        new_text += "\n\n" + "\n".join(links)
+        # Insertar el primer link como hipervinculo en el titulo (primera linea)
+        first_link = links[0]
+        lines = new_text.split("\n")
+        lines[0] = f"[{lines[0]}]({first_link})"
+        new_text = "\n".join(lines)
+        # Si hay links adicionales, agregarlos al final
+        if len(links) > 1:
+            new_text += "\n\n" + "\n".join(links[1:])
 
     await client.edit_message(
         event.chat_id,
         msg.id,
         new_text,
-        file=data["poster"] if with_poster else None
+        file=data["poster"] if with_poster else None,
+        parse_mode="md"
     )
 
     # Eliminar el mensaje de comando
@@ -323,7 +331,8 @@ async def handle(event, with_poster=False):
     notif = await client.send_message(
         event.chat_id,
         f"✅ [Ir al mensaje actualizado]({link})",
-        link_preview=False
+        link_preview=False,
+        parse_mode="md"
     )
 
     # Borrar la notificacion despues de 5 segundos
