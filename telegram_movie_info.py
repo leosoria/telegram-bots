@@ -26,6 +26,44 @@ async def in_target_chat(event):
 
 
 # ----------------------------
+# NORMALIZAR PARENTAL GUIDE
+# PG-R → PG-R
+# PG-PG → PG
+# PG-Not Rated / PG-NR → PG-NR
+# PG-G → G
+# ----------------------------
+
+def format_pg(rated):
+    if not rated or rated in ("N/A", "Not Rated", "NR", "Unrated"):
+        return "PG-NR"
+    # Casos que ya incluyen "PG" en el nombre: PG, PG-13
+    if rated.startswith("PG"):
+        return rated
+    # G no lleva prefijo
+    if rated == "G":
+        return "G"
+    # R, NC-17, TV-MA, etc. → PG-R, PG-NC-17, etc.
+    return f"PG-{rated}"
+
+
+# ----------------------------
+# ACORTAR SINOPSIS
+# Corta en el primer punto después de 300 caracteres,
+# o en el punto más cercano a 400 si no hay uno antes
+# ----------------------------
+
+def shorten_synopsis(text, max_chars=300):
+    if len(text) <= max_chars:
+        return text
+    # Buscar el primer punto después de max_chars
+    cut = text.find(".", max_chars)
+    if cut == -1 or cut > max_chars + 150:
+        # No hay punto cercano, cortar en la última palabra antes del límite
+        cut = text.rfind(" ", 0, max_chars)
+    return text[:cut].rstrip(".")
+
+
+# ----------------------------
 # EXTRAER TEXTO LIMPIO DE MARKDOWN
 # ----------------------------
 
@@ -148,17 +186,16 @@ def get_movie(query):
         return None
 
     movie_id = results[0]["id"]
-
-    # --- Detalle en inglés: título, géneros, duración, reparto ---
     detail_url = f"{TMDB_BASE}/movie/{movie_id}"
 
+    # --- Detalle en inglés: título, géneros, duración, reparto ---
     detail_en = requests.get(detail_url, params={
         "api_key": TMDB_KEY,
         "language": "en-US",
         "append_to_response": "credits"
     }, timeout=5).json()
 
-    # --- Detalle en español: solo para la sinopsis ---
+    # --- Detalle en español: solo sinopsis ---
     detail_es = requests.get(detail_url, params={
         "api_key": TMDB_KEY,
         "language": "es-ES",
@@ -185,10 +222,8 @@ def get_movie(query):
     print("PELICULA ENCONTRADA:", tmdb_title)
 
     # --- Sinopsis en español ---
-    # Primero intentar TMDB en español
     plot_es = detail_es.get("overview", "").strip()
 
-    # Si TMDB no tiene sinopsis en español, usar OMDB y traducir
     if not plot_es:
         omdb_for_plot = get_omdb(tmdb_title, release_year)
         if omdb_for_plot:
@@ -201,6 +236,8 @@ def get_movie(query):
     if not plot_es:
         plot_es = "Sin sinopsis disponible"
 
+    # Acortar y limpiar sinopsis
+    plot_es = shorten_synopsis(plot_es)
     plot_es = plot_es.rstrip(".")
 
     # --- OMDB: parental guide + IMDB rating ---
@@ -208,7 +245,7 @@ def get_movie(query):
 
     if omdb:
         rated = omdb.get("Rated", "")
-        pg = f"PG-{rated}" if rated and rated not in ("N/A", "") else "PG-NR"
+        pg = format_pg(rated)
         imdb_rating = omdb.get("imdbRating", "")
         imdb_rating = imdb_rating if imdb_rating and imdb_rating != "N/A" else "0.0"
     else:
@@ -248,7 +285,7 @@ async def handle(event, with_poster=False):
     content = msg.text or msg.caption or ""
 
     if not content:
-        await event.reply("El mensaje no tiene texto")
+        await event.delete()
         return
 
     print("CONTENIDO DEL MENSAJE:", content[:80])
@@ -258,6 +295,7 @@ async def handle(event, with_poster=False):
     data = get_movie(title)
 
     if not data:
+        # Solo avisar si realmente no se encontró
         await event.reply("Película no encontrada")
         return
 
@@ -273,6 +311,7 @@ async def handle(event, with_poster=False):
         file=data["poster"] if with_poster else None
     )
 
+    # Eliminar el mensaje de comando silenciosamente
     await event.delete()
 
 
