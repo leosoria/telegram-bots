@@ -27,7 +27,6 @@ async def in_target_chat(event):
 
 # ----------------------------
 # EXTRAER TEXTO LIMPIO DE MARKDOWN
-# Convierte [Sergio (2020)](https://t.me/...) → Sergio (2020)
 # ----------------------------
 
 def clean_markdown_links(text):
@@ -36,16 +35,10 @@ def clean_markdown_links(text):
 
 # ----------------------------
 # EXTRAER SOLO TITULO Y AÑO DE LA PRIMERA LINEA
-# Maneja casos como:
-#   "Sergio (2020)"
-#   "Sergio (2020) | 118 min | Drama"
-#   "Sergio (2020) PG-R | 118 min | Drama [6.2]"
 # ----------------------------
 
 def extract_title_from_line(line):
-    # Quitar markdown primero
     line = clean_markdown_links(line)
-    # Tomar solo lo que está antes del primer "|" o "[" o "PG-"
     line = re.split(r'\||\[|PG-', line)[0].strip()
     return line
 
@@ -58,8 +51,6 @@ def split_message(text):
 
     lines = text.split("\n")
     raw_title = lines[0].strip()
-
-    # Titulo limpio para buscar (sin markdown, sin info extra)
     clean_title = extract_title_from_line(raw_title)
 
     links = []
@@ -136,12 +127,12 @@ def get_movie(query):
     print("TITULO FINAL:", title)
     print("AÑO DETECTADO:", year)
 
-    # --- TMDB: géneros, duración, reparto, poster ---
+    # --- TMDB en inglés: géneros ---
     search_url = f"{TMDB_BASE}/search/movie"
     params = {
         "api_key": TMDB_KEY,
         "query": title,
-        "language": "es-ES",
+        "language": "en-US",  # inglés para géneros
     }
     if year:
         params["year"] = year
@@ -161,7 +152,7 @@ def get_movie(query):
     detail_url = f"{TMDB_BASE}/movie/{movie_id}"
     detail_params = {
         "api_key": TMDB_KEY,
-        "language": "es-ES",
+        "language": "en-US",  # inglés para géneros
         "append_to_response": "credits"
     }
     detail = requests.get(detail_url, params=detail_params, timeout=5).json()
@@ -171,9 +162,11 @@ def get_movie(query):
     runtime = detail.get("runtime")
     runtime_str = f"{runtime} min" if runtime else "N/A"
 
+    # Géneros en inglés
     genres = [g["name"] for g in detail.get("genres", [])]
     genre_str = ", ".join(genres) if genres else "N/A"
 
+    # Reparto
     cast_list = detail.get("credits", {}).get("cast", [])[:5]
     cast_str = ", ".join([c["name"] for c in cast_list]) if cast_list else "N/A"
 
@@ -197,7 +190,9 @@ def get_movie(query):
     else:
         pg = "PG-NR"
         imdb_rating = "N/A"
-        plot_es = detail.get("overview") or "Sin sinopsis disponible."
+        # Fallback: sinopsis de TMDB en español
+        detail_es = requests.get(detail_url, params={**detail_params, "language": "es-ES"}, timeout=5).json()
+        plot_es = detail_es.get("overview") or "Sin sinopsis disponible."
 
     # Quitar punto final de la sinopsis
     plot_es = plot_es.rstrip(".")
@@ -218,51 +213,10 @@ def get_movie(query):
 
 
 # ----------------------------
-# /INFO (SOLO TEXTO)
+# HANDLER COMPARTIDO
 # ----------------------------
 
-@client.on(events.NewMessage(pattern="^/info"))
-async def info(event):
-
-    if not await in_target_chat(event):
-        return
-
-    if not event.reply_to_msg_id:
-        return
-
-    msg = await event.get_reply_message()
-
-    if not msg.text:
-        return
-
-    title, links, other = split_message(msg.text)
-
-    data = get_movie(title)
-
-    if not data:
-        await event.reply("Película no encontrada")
-        return
-
-    new_text = data["text"]
-
-    if links:
-        new_text += "\n\n" + "\n".join(links)
-
-    await client.edit_message(
-        event.chat_id,
-        msg.id,
-        new_text
-    )
-
-    await event.delete()
-
-
-# ----------------------------
-# /INFOP (TEXTO + POSTER)
-# ----------------------------
-
-@client.on(events.NewMessage(pattern="^/infop"))
-async def infop(event):
+async def handle(event, with_poster=False):
 
     if not await in_target_chat(event):
         return
@@ -292,10 +246,26 @@ async def infop(event):
         event.chat_id,
         msg.id,
         new_text,
-        file=data["poster"]
+        file=data["poster"] if with_poster else None
     )
 
     await event.delete()
+
+
+# ----------------------------
+# COMANDOS: con y sin slash
+# info / /info → solo texto
+# infop / /infop → texto + poster
+# ----------------------------
+
+@client.on(events.NewMessage(pattern=r"^/?info$"))
+async def cmd_info(event):
+    await handle(event, with_poster=False)
+
+
+@client.on(events.NewMessage(pattern=r"^/?infop$"))
+async def cmd_infop(event):
+    await handle(event, with_poster=True)
 
 
 client.start()
