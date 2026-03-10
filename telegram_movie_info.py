@@ -2,13 +2,14 @@ from telethon import TelegramClient, events
 import requests
 from deep_translator import GoogleTranslator
 from urllib.parse import quote
+import os
 
 # TELEGRAM
-api_id = 17877920
-api_hash = "4a5893a520b6d4adc40cfa0015b3ecae"
+api_id = int(os.getenv("API_ID"))
+api_hash = os.getenv("API_HASH")
 
 # OMDB
-OMDB_KEY = "f296cc45"
+OMDB_KEY = os.getenv("OMDB_KEY")
 
 TARGET_CHAT = "My Movies Index"
 
@@ -86,3 +87,4 @@ async def movie_info(event):
 client.start()
 print("Movie index activo...")
 client.run_until_disconnected()
+
