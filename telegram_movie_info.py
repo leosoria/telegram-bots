@@ -2,7 +2,6 @@ from telethon import TelegramClient, events
 import requests
 from deep_translator import GoogleTranslator
 from urllib.parse import quote
-import re
 
 # TELEGRAM
 api_id = 17877920
@@ -29,22 +28,22 @@ def split_message(text):
 
     lines = text.split("\n")
 
-    title = lines[0]
+    title = lines[0].strip()
 
     links = []
     other = []
 
     for line in lines[1:]:
 
+        line = line.strip()
+
         if "http" in line or "t.me" in line:
             links.append(line)
-        else:
+        elif line:
             other.append(line)
 
     return title, links, other
 
-
-print("QUERY:", query)
 
 # ----------------------------
 # OBTENER INFO OMDB
@@ -119,7 +118,8 @@ def get_movie(query):
         "text": text,
         "poster": poster
     }
-    
+
+
 # ----------------------------
 # /INFO (SOLO TEXTO)
 # ----------------------------
@@ -210,6 +210,3 @@ async def infop(event):
 client.start()
 print("Bot activo...")
 client.run_until_disconnected()
-
-
-
