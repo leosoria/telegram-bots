@@ -51,9 +51,23 @@ def split_message(text):
 def get_movie(query):
 
     query = query.replace(",", "")
-    query = quote(query)
 
-    url = f"http://www.omdbapi.com/?t={query}&apikey={OMDB_KEY}"
+    # detectar año
+    year = None
+    words = query.split()
+
+    for w in words:
+        if w.isdigit() and len(w) == 4:
+            year = w
+            query = query.replace(w, "").strip()
+            break
+
+    query_encoded = quote(query)
+
+    if year:
+        url = f"http://www.omdbapi.com/?t={query_encoded}&y={year}&apikey={OMDB_KEY}"
+    else:
+        url = f"http://www.omdbapi.com/?t={query_encoded}&apikey={OMDB_KEY}"
 
     r = requests.get(url).json()
 
@@ -71,7 +85,6 @@ def get_movie(query):
     genre = genre.replace("Sci-Fi", "Science Fiction")
 
     rating = r.get("Rated", "")
-
     if rating:
         rating = f"PG-{rating}"
 
@@ -92,8 +105,7 @@ def get_movie(query):
         "text": text,
         "poster": poster
     }
-
-
+    
 # ----------------------------
 # /INFO (SOLO TEXTO)
 # ----------------------------
@@ -184,3 +196,4 @@ async def infop(event):
 client.start()
 print("Bot activo...")
 client.run_until_disconnected()
+
