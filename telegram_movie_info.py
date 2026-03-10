@@ -257,7 +257,7 @@ def get_movie(query):
     text = (
         f"{tmdb_title} ({release_year})\n"
         f"{pg} | {runtime_str} | {genre_str} **[{imdb_rating}]**\n"
-        f"> **Synopsis:** {plot_es}\n"
+        f"**Synopsis:** {plot_es}\n"
         f"Cast: {cast_str}"
     )
 
