@@ -127,7 +127,7 @@ def get_movie(query):
     print("TITULO FINAL:", title)
     print("AÑO DETECTADO:", year)
 
-    # --- TMDB en inglés: géneros ---
+    # --- Buscar en TMDB en inglés ---
     search_url = f"{TMDB_BASE}/search/movie"
     params = {
         "api_key": TMDB_KEY,
@@ -149,49 +149,71 @@ def get_movie(query):
 
     movie_id = results[0]["id"]
 
+    # --- Detalle en inglés: título, géneros, duración, reparto ---
     detail_url = f"{TMDB_BASE}/movie/{movie_id}"
-    detail_params = {
+
+    detail_en = requests.get(detail_url, params={
         "api_key": TMDB_KEY,
         "language": "en-US",
         "append_to_response": "credits"
-    }
-    detail = requests.get(detail_url, params=detail_params, timeout=5).json()
+    }, timeout=5).json()
 
-    tmdb_title = detail.get("title", title)
-    release_year = (detail.get("release_date") or "")[:4]
-    runtime = detail.get("runtime")
+    # --- Detalle en español: solo para la sinopsis ---
+    detail_es = requests.get(detail_url, params={
+        "api_key": TMDB_KEY,
+        "language": "es-ES",
+    }, timeout=5).json()
+
+    # Título original en inglés
+    tmdb_title = detail_en.get("original_title") or detail_en.get("title", title)
+    release_year = (detail_en.get("release_date") or "")[:4]
+    runtime = detail_en.get("runtime")
     runtime_str = f"{runtime} min" if runtime else "N/A"
 
-    genres = [g["name"] for g in detail.get("genres", [])]
+    # Géneros en inglés
+    genres = [g["name"] for g in detail_en.get("genres", [])]
     genre_str = ", ".join(genres) if genres else "N/A"
 
-    cast_list = detail.get("credits", {}).get("cast", [])[:5]
+    # Reparto
+    cast_list = detail_en.get("credits", {}).get("cast", [])[:5]
     cast_str = ", ".join([c["name"] for c in cast_list]) if cast_list else "N/A"
 
-    poster_path = detail.get("poster_path")
+    # Poster
+    poster_path = detail_en.get("poster_path")
     poster = f"https://image.tmdb.org/t/p/w500{poster_path}" if poster_path else None
 
     print("PELICULA ENCONTRADA:", tmdb_title)
 
-    # --- OMDB: parental guide + IMDB rating + sinopsis ---
+    # --- Sinopsis en español ---
+    # Primero intentar TMDB en español
+    plot_es = detail_es.get("overview", "").strip()
+
+    # Si TMDB no tiene sinopsis en español, usar OMDB y traducir
+    if not plot_es:
+        omdb_for_plot = get_omdb(tmdb_title, release_year)
+        if omdb_for_plot:
+            plot_raw = omdb_for_plot.get("Plot", "")
+            try:
+                plot_es = GoogleTranslator(source="auto", target="es").translate(plot_raw)
+            except:
+                plot_es = plot_raw
+
+    if not plot_es:
+        plot_es = "Sin sinopsis disponible"
+
+    plot_es = plot_es.rstrip(".")
+
+    # --- OMDB: parental guide + IMDB rating ---
     omdb = get_omdb(tmdb_title, release_year)
 
     if omdb:
         rated = omdb.get("Rated", "")
-        pg = f"PG-{rated}" if rated and rated != "N/A" else "PG-NR"
-        imdb_rating = omdb.get("imdbRating", "N/A")
-        plot_raw = omdb.get("Plot", "")
-        try:
-            plot_es = GoogleTranslator(source="auto", target="es").translate(plot_raw)
-        except:
-            plot_es = plot_raw
+        pg = f"PG-{rated}" if rated and rated not in ("N/A", "") else "PG-NR"
+        imdb_rating = omdb.get("imdbRating", "")
+        imdb_rating = imdb_rating if imdb_rating and imdb_rating != "N/A" else "0.0"
     else:
         pg = "PG-NR"
-        imdb_rating = "N/A"
-        detail_es = requests.get(detail_url, params={**detail_params, "language": "es-ES"}, timeout=5).json()
-        plot_es = detail_es.get("overview") or "Sin sinopsis disponible."
-
-    plot_es = plot_es.rstrip(".")
+        imdb_rating = "0.0"
 
     print("-----------------")
 
