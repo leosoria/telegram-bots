@@ -35,6 +35,22 @@ def clean_markdown_links(text):
 
 
 # ----------------------------
+# EXTRAER SOLO TITULO Y AÑO DE LA PRIMERA LINEA
+# Maneja casos como:
+#   "Sergio (2020)"
+#   "Sergio (2020) | 118 min | Drama"
+#   "Sergio (2020) PG-R | 118 min | Drama [6.2]"
+# ----------------------------
+
+def extract_title_from_line(line):
+    # Quitar markdown primero
+    line = clean_markdown_links(line)
+    # Tomar solo lo que está antes del primer "|" o "[" o "PG-"
+    line = re.split(r'\||\[|PG-', line)[0].strip()
+    return line
+
+
+# ----------------------------
 # SEPARAR TITULO Y LINKS
 # ----------------------------
 
@@ -42,7 +58,9 @@ def split_message(text):
 
     lines = text.split("\n")
     raw_title = lines[0].strip()
-    clean_title = clean_markdown_links(raw_title)
+
+    # Titulo limpio para buscar (sin markdown, sin info extra)
+    clean_title = extract_title_from_line(raw_title)
 
     links = []
     other = []
@@ -55,11 +73,10 @@ def split_message(text):
             other.append(line)
 
     # Conservar URLs embebidas en el título
-    if raw_title != clean_title:
-        urls_in_title = re.findall(r'\((https?://[^\)]+)\)', raw_title)
-        for url in urls_in_title:
-            if url not in links:
-                links.insert(0, url)
+    urls_in_title = re.findall(r'\((https?://[^\)]+)\)', raw_title)
+    for url in urls_in_title:
+        if url not in links:
+            links.insert(0, url)
 
     return clean_title, links, other
 
@@ -173,7 +190,6 @@ def get_movie(query):
         pg = f"PG-{rated}" if rated and rated != "N/A" else "PG-NR"
         imdb_rating = omdb.get("imdbRating", "N/A")
         plot_raw = omdb.get("Plot", "")
-        # Traducir sinopsis al español
         try:
             plot_es = GoogleTranslator(source="auto", target="es").translate(plot_raw)
         except:
@@ -181,10 +197,9 @@ def get_movie(query):
     else:
         pg = "PG-NR"
         imdb_rating = "N/A"
-        # Fallback: sinopsis de TMDB (ya viene en español)
         plot_es = detail.get("overview") or "Sin sinopsis disponible."
 
-    # Quitar punto final de la sinopsis si existe
+    # Quitar punto final de la sinopsis
     plot_es = plot_es.rstrip(".")
 
     print("-----------------")
@@ -230,9 +245,6 @@ async def info(event):
 
     new_text = data["text"]
 
-    if other:
-        new_text += "\n" + "\n".join(other)
-
     if links:
         new_text += "\n\n" + "\n".join(links)
 
@@ -272,9 +284,6 @@ async def infop(event):
         return
 
     new_text = data["text"]
-
-    if other:
-        new_text += "\n" + "\n".join(other)
 
     if links:
         new_text += "\n\n" + "\n".join(links)
