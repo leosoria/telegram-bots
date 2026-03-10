@@ -25,13 +25,27 @@ async def in_target_chat(event):
 
 
 # ----------------------------
+# EXTRAER TEXTO LIMPIO DE MARKDOWN
+# Convierte [Sergio (2020)](https://t.me/...) → Sergio (2020)
+# ----------------------------
+
+def clean_markdown_links(text):
+    # Reemplaza [texto](url) por solo el texto visible
+    return re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', text)
+
+
+# ----------------------------
 # SEPARAR TITULO Y LINKS
 # ----------------------------
 
 def split_message(text):
 
     lines = text.split("\n")
-    title = lines[0].strip()
+    raw_title = lines[0].strip()
+
+    # Titulo limpio para buscar (sin markdown)
+    clean_title = clean_markdown_links(raw_title)
+
     links = []
     other = []
 
@@ -42,7 +56,16 @@ def split_message(text):
         elif line:
             other.append(line)
 
-    return title, links, other
+    # Si la primera línea tenía un link embebido, lo conservamos como link también
+    if raw_title != clean_title:
+        # Extraer solo las URLs del título original
+        urls_in_title = re.findall(r'\(https?://[^\)]+\)', raw_title)
+        for u in urls_in_title:
+            url = u[1:-1]  # sacar paréntesis
+            if url not in links:
+                links.insert(0, url)
+
+    return clean_title, links, other
 
 
 # ----------------------------
