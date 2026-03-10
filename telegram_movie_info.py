@@ -52,7 +52,11 @@ print("QUERY:", query)
 
 def get_movie(query):
 
-    query = query.replace(",", "")
+    print("----- OMDB DEBUG -----")
+    print("QUERY ORIGINAL:", query)
+
+    query = query.replace(",", "").strip()
+    print("QUERY LIMPIA:", query)
 
     # detectar año
     year = None
@@ -64,6 +68,9 @@ def get_movie(query):
             query = query.replace(w, "").strip()
             break
 
+    print("TITULO FINAL:", query)
+    print("AÑO DETECTADO:", year)
+
     query_encoded = quote(query)
 
     if year:
@@ -71,7 +78,12 @@ def get_movie(query):
     else:
         url = f"http://www.omdbapi.com/?t={query_encoded}&apikey={OMDB_KEY}"
 
+    print("URL OMDB:", url)
+
     r = requests.get(url).json()
+
+    print("RESPUESTA OMDB:", r)
+    print("----------------------")
 
     if r.get("Response") == "False":
         return None
@@ -198,5 +210,6 @@ async def infop(event):
 client.start()
 print("Bot activo...")
 client.run_until_disconnected()
+
 
 
