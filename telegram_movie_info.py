@@ -311,8 +311,24 @@ async def handle(event, with_poster=False):
         file=data["poster"] if with_poster else None
     )
 
-    # Eliminar el mensaje de comando silenciosamente
+    # Eliminar el mensaje de comando
     await event.delete()
+
+    # Armar link directo al mensaje editado
+    import asyncio
+    chat_id = str(event.chat_id).replace("-100", "")
+    link = f"https://t.me/c/{chat_id}/{msg.id}"
+
+    # Enviar notificacion temporal con link
+    notif = await client.send_message(
+        event.chat_id,
+        f"✅ [Ir al mensaje actualizado]({link})",
+        link_preview=False
+    )
+
+    # Borrar la notificacion despues de 5 segundos
+    await asyncio.sleep(5)
+    await notif.delete()
 
 
 # ----------------------------
