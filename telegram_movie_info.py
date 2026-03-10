@@ -2,14 +2,14 @@ from telethon import TelegramClient, events
 import requests
 from deep_translator import GoogleTranslator
 from urllib.parse import quote
-import os
+import re
 
 # TELEGRAM
-api_id = int(os.getenv("API_ID"))
-api_hash = os.getenv("API_HASH")
+api_id = 17877920
+api_hash = "4a5893a520b6d4adc40cfa0015b3ecae"
 
 # OMDB
-OMDB_KEY = os.getenv("OMDB_KEY")
+OMDB_KEY = "f296cc45"
 
 TARGET_CHAT = "My Movies Index"
 
@@ -21,38 +21,44 @@ async def in_target_chat(event):
     return getattr(chat, "title", "") == TARGET_CHAT
 
 
-@client.on(events.NewMessage)
-async def movie_info(event):
+# ----------------------------
+# SEPARAR TITULO Y LINKS
+# ----------------------------
 
-    if not await in_target_chat(event):
-        return
+def split_message(text):
 
-    text = event.raw_text.strip()
+    lines = text.split("\n")
 
-    if not text:
-        return
+    title = lines[0]
 
-    parts = text.split()
-    year = None
+    links = []
+    other = []
 
-    # detectar año
-    if parts[-1].isdigit() and len(parts[-1]) == 4:
-        year = parts[-1]
-        title = " ".join(parts[:-1])
-    else:
-        title = text
+    for line in lines[1:]:
 
-    title = quote(title)
+        if "http" in line or "t.me" in line:
+            links.append(line)
+        else:
+            other.append(line)
 
-    if year:
-        url = f"http://www.omdbapi.com/?t={title}&y={year}&apikey={OMDB_KEY}"
-    else:
-        url = f"http://www.omdbapi.com/?t={title}&apikey={OMDB_KEY}"
+    return title, links, other
+
+
+# ----------------------------
+# OBTENER INFO OMDB
+# ----------------------------
+
+def get_movie(query):
+
+    query = query.replace(",", "")
+    query = quote(query)
+
+    url = f"http://www.omdbapi.com/?t={query}&apikey={OMDB_KEY}"
 
     r = requests.get(url).json()
 
     if r.get("Response") == "False":
-        return
+        return None
 
     plot = r.get("Plot", "")
 
@@ -61,30 +67,120 @@ async def movie_info(event):
     except:
         plot_es = plot
 
-    cast = r.get("Actors", "").split(",")[:5]
-    cast = ", ".join(cast)
-
     genre = r.get("Genre", "")
     genre = genre.replace("Sci-Fi", "Science Fiction")
 
     rating = r.get("Rated", "")
-    if rating == "R":
-        rating = "PG-R"
 
-    msg = f"{r.get('Title')} ({r.get('Year')})\n{rating} | {r.get('Runtime')} | {genre} [{r.get('imdbRating')}]\nSynopsis: {plot_es}\nCast: {cast}"
+    if rating:
+        rating = f"PG-{rating}"
+
+    cast = r.get("Actors", "").split(",")[:5]
+    cast = ", ".join(cast)
+
+    text = (
+        f"{r.get('Title')} ({r.get('Year')}) "
+        f"{rating} | {r.get('Runtime')} | {genre} "
+        f"[{r.get('imdbRating')}]\n"
+        f"Synopsis: {plot_es}\n"
+        f"Cast: {cast}"
+    )
 
     poster = r.get("Poster")
 
-    # borrar mensaje original
+    return {
+        "text": text,
+        "poster": poster
+    }
+
+
+# ----------------------------
+# /INFO (SOLO TEXTO)
+# ----------------------------
+
+@client.on(events.NewMessage(pattern="^/info"))
+async def info(event):
+
+    if not await in_target_chat(event):
+        return
+
+    if not event.reply_to_msg_id:
+        return
+
+    msg = await event.get_reply_message()
+
+    if not msg.text:
+        return
+
+    title, links, other = split_message(msg.text)
+
+    data = get_movie(title)
+
+    if not data:
+        await event.reply("Película no encontrada")
+        return
+
+    new_text = data["text"]
+
+    if other:
+        new_text += "\n" + "\n".join(other)
+
+    if links:
+        new_text += "\n\n" + "\n".join(links)
+
+    await client.edit_message(
+        event.chat_id,
+        msg.id,
+        new_text
+    )
+
     await event.delete()
 
-    if poster and poster != "N/A":
-        await client.send_file(event.chat_id, poster, caption=msg)
-    else:
-        await client.send_message(event.chat_id, msg)
+
+# ----------------------------
+# /INFOP (TEXTO + POSTER)
+# ----------------------------
+
+@client.on(events.NewMessage(pattern="^/infop"))
+async def infop(event):
+
+    if not await in_target_chat(event):
+        return
+
+    if not event.reply_to_msg_id:
+        return
+
+    msg = await event.get_reply_message()
+
+    if not msg.text:
+        return
+
+    title, links, other = split_message(msg.text)
+
+    data = get_movie(title)
+
+    if not data:
+        await event.reply("Película no encontrada")
+        return
+
+    new_text = data["text"]
+
+    if other:
+        new_text += "\n" + "\n".join(other)
+
+    if links:
+        new_text += "\n\n" + "\n".join(links)
+
+    await client.edit_message(
+        event.chat_id,
+        msg.id,
+        new_text,
+        file=data["poster"]
+    )
+
+    await event.delete()
 
 
 client.start()
-print("Movie index activo...")
+print("Bot activo...")
 client.run_until_disconnected()
-
