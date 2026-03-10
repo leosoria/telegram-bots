@@ -1,0 +1,1 @@
+worker: python telegram_movie_info.py
