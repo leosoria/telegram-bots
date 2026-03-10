@@ -132,7 +132,7 @@ def get_movie(query):
     params = {
         "api_key": TMDB_KEY,
         "query": title,
-        "language": "en-US",  # inglés para géneros
+        "language": "en-US",
     }
     if year:
         params["year"] = year
@@ -152,7 +152,7 @@ def get_movie(query):
     detail_url = f"{TMDB_BASE}/movie/{movie_id}"
     detail_params = {
         "api_key": TMDB_KEY,
-        "language": "en-US",  # inglés para géneros
+        "language": "en-US",
         "append_to_response": "credits"
     }
     detail = requests.get(detail_url, params=detail_params, timeout=5).json()
@@ -162,11 +162,9 @@ def get_movie(query):
     runtime = detail.get("runtime")
     runtime_str = f"{runtime} min" if runtime else "N/A"
 
-    # Géneros en inglés
     genres = [g["name"] for g in detail.get("genres", [])]
     genre_str = ", ".join(genres) if genres else "N/A"
 
-    # Reparto
     cast_list = detail.get("credits", {}).get("cast", [])[:5]
     cast_str = ", ".join([c["name"] for c in cast_list]) if cast_list else "N/A"
 
@@ -190,11 +188,9 @@ def get_movie(query):
     else:
         pg = "PG-NR"
         imdb_rating = "N/A"
-        # Fallback: sinopsis de TMDB en español
         detail_es = requests.get(detail_url, params={**detail_params, "language": "es-ES"}, timeout=5).json()
         plot_es = detail_es.get("overview") or "Sin sinopsis disponible."
 
-    # Quitar punto final de la sinopsis
     plot_es = plot_es.rstrip(".")
 
     print("-----------------")
@@ -226,10 +222,16 @@ async def handle(event, with_poster=False):
 
     msg = await event.get_reply_message()
 
-    if not msg.text:
+    # Soporta mensajes de texto Y mensajes con foto (caption)
+    content = msg.text or msg.caption or ""
+
+    if not content:
+        await event.reply("El mensaje no tiene texto")
         return
 
-    title, links, other = split_message(msg.text)
+    print("CONTENIDO DEL MENSAJE:", content[:80])
+
+    title, links, other = split_message(content)
 
     data = get_movie(title)
 
@@ -253,17 +255,15 @@ async def handle(event, with_poster=False):
 
 
 # ----------------------------
-# COMANDOS: con y sin slash
-# info / /info → solo texto
-# infop / /infop → texto + poster
+# COMANDOS: con y sin slash, case insensitive
 # ----------------------------
 
-@client.on(events.NewMessage(pattern=r"^/?info$"))
+@client.on(events.NewMessage(pattern=r"(?i)^/?info$"))
 async def cmd_info(event):
     await handle(event, with_poster=False)
 
 
-@client.on(events.NewMessage(pattern=r"^/?infop$"))
+@client.on(events.NewMessage(pattern=r"(?i)^/?infop$"))
 async def cmd_infop(event):
     await handle(event, with_poster=True)
 
