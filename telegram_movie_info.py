@@ -44,6 +44,8 @@ def split_message(text):
     return title, links, other
 
 
+print("QUERY:", query)
+
 # ----------------------------
 # OBTENER INFO OMDB
 # ----------------------------
@@ -196,4 +198,5 @@ async def infop(event):
 client.start()
 print("Bot activo...")
 client.run_until_disconnected()
+
 
