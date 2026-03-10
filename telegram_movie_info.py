@@ -1,5 +1,6 @@
 from telethon import TelegramClient, events
 import requests
+import re
 from deep_translator import GoogleTranslator
 from urllib.parse import quote
 
@@ -57,15 +58,13 @@ def get_movie(query):
     query = query.replace(",", "").strip()
     print("QUERY LIMPIA:", query)
 
-    # detectar año
+    # Detectar año con o sin paréntesis: (2014) o 2014
     year = None
-    words = query.split()
+    match = re.search(r'\((\d{4})\)|(\b\d{4}\b)', query)
 
-    for w in words:
-        if w.isdigit() and len(w) == 4:
-            year = w
-            query = query.replace(w, "").strip()
-            break
+    if match:
+        year = match.group(1) or match.group(2)
+        query = re.sub(r'\s*\(\d{4}\)|\s*\b\d{4}\b', '', query).strip()
 
     print("TITULO FINAL:", query)
     print("AÑO DETECTADO:", year)
