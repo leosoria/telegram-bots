@@ -1,15 +1,18 @@
 from telethon import TelegramClient, events
 import requests
 import re
-from deep_translator import GoogleTranslator
 from urllib.parse import quote
 
 # TELEGRAM
 api_id = 17877920
 api_hash = "4a5893a520b6d4adc40cfa0015b3ecae"
 
-# OMDB
+# OMDB (solo para rating IMDB)
 OMDB_KEY = "f296cc45"
+
+# TMDB (info principal)
+TMDB_KEY = "8f542c554a666240a9247a820c39dbbe"
+TMDB_BASE = "https://api.themoviedb.org/3"
 
 TARGET_CHAT = "My Movies Index"
 
@@ -28,16 +31,12 @@ async def in_target_chat(event):
 def split_message(text):
 
     lines = text.split("\n")
-
     title = lines[0].strip()
-
     links = []
     other = []
 
     for line in lines[1:]:
-
         line = line.strip()
-
         if "http" in line or "t.me" in line:
             links.append(line)
         elif line:
@@ -47,18 +46,13 @@ def split_message(text):
 
 
 # ----------------------------
-# OBTENER INFO OMDB
+# LIMPIAR TITULO Y AÑO
 # ----------------------------
 
-def get_movie(query):
-
-    print("----- OMDB DEBUG -----")
-    print("QUERY ORIGINAL:", query)
+def parse_title_year(query):
 
     query = query.replace(",", "").strip()
-    print("QUERY LIMPIA:", query)
 
-    # Detectar año con o sin paréntesis: (2014) o 2014
     year = None
     match = re.search(r'\((\d{4})\)|(\b\d{4}\b)', query)
 
@@ -66,52 +60,115 @@ def get_movie(query):
         year = match.group(1) or match.group(2)
         query = re.sub(r'\s*\(\d{4}\)|\s*\b\d{4}\b', '', query).strip()
 
-    print("TITULO FINAL:", query)
-    print("AÑO DETECTADO:", year)
+    return query, year
 
-    query_encoded = quote(query)
 
-    if year:
-        url = f"http://www.omdbapi.com/?t={query_encoded}&y={year}&apikey={OMDB_KEY}"
-    else:
-        url = f"http://www.omdbapi.com/?t={query_encoded}&apikey={OMDB_KEY}"
+# ----------------------------
+# OBTENER RATING IMDB (OMDB)
+# ----------------------------
 
-    print("URL OMDB:", url)
-
-    r = requests.get(url).json()
-
-    print("RESPUESTA OMDB:", r)
-    print("----------------------")
-
-    if r.get("Response") == "False":
-        return None
-
-    plot = r.get("Plot", "")
+def get_imdb_rating(title, year=None):
 
     try:
-        plot_es = GoogleTranslator(source="auto", target="es").translate(plot)
+        query_encoded = quote(title)
+        if year:
+            url = f"http://www.omdbapi.com/?t={query_encoded}&y={year}&apikey={OMDB_KEY}"
+        else:
+            url = f"http://www.omdbapi.com/?t={query_encoded}&apikey={OMDB_KEY}"
+
+        r = requests.get(url, timeout=5).json()
+
+        if r.get("Response") == "True":
+            return r.get("imdbRating", "N/A")
     except:
-        plot_es = plot
+        pass
 
-    genre = r.get("Genre", "")
-    genre = genre.replace("Sci-Fi", "Science Fiction")
+    return "N/A"
 
-    rating = r.get("Rated", "")
-    if rating:
-        rating = f"PG-{rating}"
 
-    cast = r.get("Actors", "").split(",")[:5]
-    cast = ", ".join(cast)
+# ----------------------------
+# OBTENER INFO TMDB
+# ----------------------------
+
+def get_movie(query):
+
+    print("----- TMDB DEBUG -----")
+    print("QUERY ORIGINAL:", query)
+
+    title, year = parse_title_year(query)
+
+    print("TITULO FINAL:", title)
+    print("AÑO DETECTADO:", year)
+
+    # Buscar en TMDB
+    search_url = f"{TMDB_BASE}/search/movie"
+    params = {
+        "api_key": TMDB_KEY,
+        "query": title,
+        "language": "es-ES",
+    }
+    if year:
+        params["year"] = year
+
+    search_r = requests.get(search_url, params=params, timeout=5).json()
+
+    print("RESULTADOS TMDB:", len(search_r.get("results", [])))
+
+    results = search_r.get("results", [])
+    if not results:
+        print("No se encontraron resultados en TMDB")
+        print("----------------------")
+        return None
+
+    movie = results[0]
+    movie_id = movie["id"]
+
+    # Detalle completo de la película (con créditos)
+    detail_url = f"{TMDB_BASE}/movie/{movie_id}"
+    detail_params = {
+        "api_key": TMDB_KEY,
+        "language": "es-ES",
+        "append_to_response": "credits"
+    }
+
+    detail = requests.get(detail_url, params=detail_params, timeout=5).json()
+
+    print("PELICULA ENCONTRADA:", detail.get("title"))
+    print("----------------------")
+
+    # Datos principales
+    tmdb_title = detail.get("title", title)
+    release_year = (detail.get("release_date") or "")[:4]
+    runtime = detail.get("runtime")
+    runtime_str = f"{runtime} min" if runtime else "N/A"
+    plot_es = detail.get("overview") or "Sin sinopsis disponible."
+
+    # Géneros
+    genres = [g["name"] for g in detail.get("genres", [])]
+    genre_str = ", ".join(genres) if genres else "N/A"
+
+    # Reparto (primeros 5)
+    cast_list = detail.get("credits", {}).get("cast", [])[:5]
+    cast_str = ", ".join([c["name"] for c in cast_list]) if cast_list else "N/A"
+
+    # Rating TMDB
+    tmdb_score = detail.get("vote_average")
+    tmdb_rating = f"{tmdb_score:.1f}" if tmdb_score else "N/A"
+
+    # Rating IMDB via OMDB
+    imdb_rating = get_imdb_rating(tmdb_title, release_year)
+
+    # Poster
+    poster_path = detail.get("poster_path")
+    poster = f"https://image.tmdb.org/t/p/w500{poster_path}" if poster_path else None
 
     text = (
-        f"{r.get('Title')} ({r.get('Year')}) "
-        f"{rating} | {r.get('Runtime')} | {genre} "
-        f"[{r.get('imdbRating')}]\n"
-        f"Synopsis: {plot_es}\n"
-        f"Cast: {cast}"
+        f"{tmdb_title} ({release_year}) | "
+        f"{runtime_str} | {genre_str}\n"
+        f"TMDB: {tmdb_rating} | IMDB: {imdb_rating}\n"
+        f"Sinopsis: {plot_es}\n"
+        f"Reparto: {cast_str}"
     )
-
-    poster = r.get("Poster")
 
     return {
         "text": text,
