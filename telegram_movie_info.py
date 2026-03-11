@@ -88,13 +88,27 @@ def extract_title_from_line(line):
 def split_message(text):
 
     lines = text.split("\n")
-    raw_title = lines[0].strip()
+
+    # Reconstruir el titulo aunque tenga salto de linea dentro del link markdown
+    # Ej: "[SAS: Red Notice (2021)\n](https://t.me/...)" → una sola línea
+    raw_title_parts = []
+    remaining_start = 0
+    for i, line in enumerate(lines):
+        raw_title_parts.append(line)
+        joined = " ".join(raw_title_parts)
+        # Si ya cerramos el link markdown o no hay link abierto, es el titulo completo
+        open_brackets = joined.count("[") - joined.count("]")
+        if open_brackets <= 0:
+            remaining_start = i + 1
+            break
+
+    raw_title = " ".join(raw_title_parts).strip()
     clean_title = extract_title_from_line(raw_title)
 
     links = []
     other = []
 
-    for line in lines[1:]:
+    for line in lines[remaining_start:]:
         line = line.strip()
         if "http" in line or "t.me" in line:
             links.append(line)
@@ -152,6 +166,59 @@ def get_omdb(title, year=None):
 
 
 # ----------------------------
+# TRADUCIR TITULO AL INGLES (fallback)
+# ----------------------------
+
+def translate_to_english(text):
+    try:
+        return GoogleTranslator(source="auto", target="en").translate(text)
+    except:
+        return None
+
+
+# ----------------------------
+# BUSCAR EN TMDB CON REINTENTOS
+# ----------------------------
+
+def search_tmdb(title, year=None):
+    search_url = f"{TMDB_BASE}/search/movie"
+
+    # Intento 1: título original + año
+    params = {"api_key": TMDB_KEY, "query": title, "language": "en-US"}
+    if year:
+        params["year"] = year
+    results = requests.get(search_url, params=params, timeout=5).json().get("results", [])
+    if results:
+        return results, "original"
+
+    # Intento 2: título original sin año
+    if year:
+        params.pop("year")
+        results = requests.get(search_url, params=params, timeout=5).json().get("results", [])
+        if results:
+            return results, "sin año"
+
+    # Intento 3: traducir al inglés + año
+    translated = translate_to_english(title)
+    if translated and translated.lower() != title.lower():
+        params2 = {"api_key": TMDB_KEY, "query": translated, "language": "en-US"}
+        if year:
+            params2["year"] = year
+        results = requests.get(search_url, params=params2, timeout=5).json().get("results", [])
+        if results:
+            return results, f"traducido: '{translated}'"
+
+        # Intento 4: traducido sin año
+        if year:
+            params2.pop("year")
+            results = requests.get(search_url, params=params2, timeout=5).json().get("results", [])
+            if results:
+                return results, f"traducido sin año: '{translated}'"
+
+    return [], None
+
+
+# ----------------------------
 # OBTENER INFO TMDB
 # ----------------------------
 
@@ -165,27 +232,21 @@ def get_movie(query):
     print("TITULO FINAL:", title)
     print("AÑO DETECTADO:", year)
 
-    # --- Buscar en TMDB en inglés ---
-    search_url = f"{TMDB_BASE}/search/movie"
-    params = {
-        "api_key": TMDB_KEY,
-        "query": title,
-        "language": "en-US",
-    }
-    if year:
-        params["year"] = year
+    results, search_method = search_tmdb(title, year)
 
-    search_r = requests.get(search_url, params=params, timeout=5).json()
-    results = search_r.get("results", [])
-
-    print("RESULTADOS TMDB:", len(results))
+    print("RESULTADOS TMDB:", len(results), f"(método: {search_method})")
 
     if not results:
         print("No se encontraron resultados en TMDB")
         print("-----------------")
-        return None
+        # Devolver pista de búsqueda
+        hint = f"título: '{title}'"
+        if year:
+            hint += f", año: {year}"
+        return None, hint
 
     movie_id = results[0]["id"]
+    hint = None  # búsqueda exitosa, no hay pista
     detail_url = f"{TMDB_BASE}/movie/{movie_id}"
 
     # --- Detalle en inglés: título, géneros, duración, reparto ---
@@ -264,7 +325,7 @@ def get_movie(query):
     return {
         "text": text,
         "poster": poster
-    }
+    }, None
 
 
 # ----------------------------
@@ -292,11 +353,27 @@ async def handle(event, with_poster=False):
 
     title, links, other = split_message(content)
 
-    data = get_movie(title)
+    data, hint = get_movie(title)
 
     if not data:
-        # Solo avisar si realmente no se encontró
-        await event.reply("Película no encontrada")
+        # Armar link al mensaje original
+        chat_id = str(event.chat_id).replace("-100", "")
+        link = f"https://t.me/c/{chat_id}/{msg.id}"
+        msg_not_found = f"❌ [Película no encontrada]({link})"
+        if hint:
+            msg_not_found += f"\nBusqué: {hint}"
+        # Borrar el comando info
+        await event.delete()
+        # Notificacion temporal con link al mensaje
+        notif = await client.send_message(
+            event.chat_id,
+            msg_not_found,
+            link_preview=False,
+            parse_mode="md"
+        )
+        import asyncio
+        await asyncio.sleep(8)
+        await notif.delete()
         return
 
     new_text = data["text"]
