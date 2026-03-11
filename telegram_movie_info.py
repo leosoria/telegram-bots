@@ -77,7 +77,12 @@ def clean_markdown_links(text):
 
 def extract_title_from_line(line):
     line = clean_markdown_links(line)
+    # Cortar en | [ PG- o cualquier texto suelto después del año entre paréntesis
     line = re.split(r'\||\[|PG-', line)[0].strip()
+    # Eliminar cualquier texto suelto que quede después del año (ej: "Titulo (2021)15" → "Titulo (2021)")
+    line = re.sub(r'(\(\d{4}\)).*', r'\1', line).strip()
+    # Si no hay año, eliminar texto no alfanumérico al final
+    line = re.sub(r'[^\w\s\(\)\:\.\-\']+$', '', line).strip()
     return line
 
 
@@ -87,28 +92,18 @@ def extract_title_from_line(line):
 
 def split_message(text):
 
-    lines = text.split("\n")
+    # Normalizar: eliminar saltos de linea dentro de links markdown
+    # Ej: "[Titulo (2021)\n](https://t.me/...)" → "[Titulo (2021)](https://t.me/...)"
+    normalized = re.sub(r'\[([^\]]*?)\n(\]\(https?://[^\)]+\))', r'[\1\2', text)
 
-    # Reconstruir el titulo aunque tenga salto de linea dentro del link markdown
-    # Ej: "[SAS: Red Notice (2021)\n](https://t.me/...)" → una sola línea
-    raw_title_parts = []
-    remaining_start = 0
-    for i, line in enumerate(lines):
-        raw_title_parts.append(line)
-        joined = " ".join(raw_title_parts)
-        # Si ya cerramos el link markdown o no hay link abierto, es el titulo completo
-        open_brackets = joined.count("[") - joined.count("]")
-        if open_brackets <= 0:
-            remaining_start = i + 1
-            break
-
-    raw_title = " ".join(raw_title_parts).strip()
+    lines = normalized.split("\n")
+    raw_title = lines[0].strip()
     clean_title = extract_title_from_line(raw_title)
 
     links = []
     other = []
 
-    for line in lines[remaining_start:]:
+    for line in lines[1:]:
         line = line.strip()
         if "http" in line or "t.me" in line:
             links.append(line)
