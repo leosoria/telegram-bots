@@ -282,23 +282,28 @@ def get_movie(query):
 
     print("PELICULA ENCONTRADA:", tmdb_title)
 
-    # --- Sinopsis en español ---
-    plot_es = detail_es.get("overview", "").strip()
+    # --- Sinopsis: OMDB primero (más corta), TMDB como fallback ---
+    plot_es = ""
 
-    if not plot_es:
-        omdb_for_plot = get_omdb(tmdb_title, release_year)
-        if omdb_for_plot:
-            plot_raw = omdb_for_plot.get("Plot", "")
+    # Intentar OMDB primero
+    omdb_for_plot = get_omdb(tmdb_title, release_year)
+    if omdb_for_plot:
+        plot_raw = omdb_for_plot.get("Plot", "")
+        if plot_raw and plot_raw != "N/A":
             try:
                 plot_es = GoogleTranslator(source="auto", target="es").translate(plot_raw)
             except:
                 plot_es = plot_raw
 
+    # Fallback: sinopsis de TMDB en español
+    if not plot_es:
+        plot_es = detail_es.get("overview", "").strip()
+        if plot_es:
+            plot_es = shorten_synopsis(plot_es)
+
     if not plot_es:
         plot_es = "Sin sinopsis disponible"
 
-    # Acortar y limpiar sinopsis
-    plot_es = shorten_synopsis(plot_es)
     plot_es = plot_es.rstrip(".")
 
     # --- OMDB: parental guide + IMDB rating ---
@@ -349,7 +354,7 @@ async def handle(event, with_poster=False):
         await event.delete()
         return
 
-    print("CONTENIDO DEL MENSAJE:", content[:80])
+    print("CONTENIDO DEL MENSAJE COMPLETO:", repr(content[:300]))
 
     title, links, other = split_message(content)
 
