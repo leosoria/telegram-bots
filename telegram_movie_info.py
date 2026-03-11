@@ -273,7 +273,7 @@ def get_movie(query):
 
     # Poster
     poster_path = detail_en.get("poster_path")
-    poster = f"https://image.tmdb.org/t/p/w500{poster_path}" if poster_path else None
+    poster = f"https://image.tmdb.org/t/p/w1280{poster_path}" if poster_path else None
 
     print("PELICULA ENCONTRADA:", tmdb_title)
 
@@ -434,3 +434,4 @@ async def cmd_infop(event):
 client.start()
 print("Bot activo...")
 client.run_until_disconnected()
+
